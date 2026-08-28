@@ -1,0 +1,3 @@
+import WhistleCore
+
+WhistleEntry.main()

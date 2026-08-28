@@ -1,0 +1,54 @@
+name: build
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-14, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -c release --product whistle
+      - name: Test
+        run: swift run whistle-tests
+      - name: App bundle
+        run: make app
+      - name: Validate app bundle
+        run: |
+          codesign -v build.noindex/Whistle-Hotkey.app
+          plutil -lint build.noindex/Whistle-Hotkey.app/Contents/Info.plist
+      - name: Package
+        if: matrix.os == 'macos-latest'
+        run: |
+          ditto -c -k --keepParent build.noindex/Whistle-Hotkey.app Whistle-Hotkey.zip
+          shasum -a 256 Whistle-Hotkey.zip > Whistle-Hotkey.zip.sha256
+      - name: Provenance
+        if: matrix.os == 'macos-latest'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: Whistle-Hotkey.zip
+      - name: Upload artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Whistle-Hotkey-macos
+          path: |
+            Whistle-Hotkey.zip
+            Whistle-Hotkey.zip.sha256
+
+  intel:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Intel compile check
+        run: swift build -c release --product whistle --arch x86_64
