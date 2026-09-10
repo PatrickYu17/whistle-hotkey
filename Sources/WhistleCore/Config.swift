@@ -8,13 +8,15 @@ struct Binding: Codable, Equatable {
     let keyCode: UInt32
     let modifiers: UInt32
     var terminal: Bool
+    var enabled: Bool
 
-    init(id: Int, command: String, keyCode: UInt32, modifiers: UInt32, terminal: Bool = false) {
+    init(id: Int, command: String, keyCode: UInt32, modifiers: UInt32, terminal: Bool = false, enabled: Bool = true) {
         self.id = id
         self.command = command
         self.keyCode = keyCode
         self.modifiers = modifiers
         self.terminal = terminal
+        self.enabled = enabled
     }
 
     init(from decoder: Decoder) throws {
@@ -24,6 +26,7 @@ struct Binding: Codable, Equatable {
         keyCode = try c.decode(UInt32.self, forKey: .keyCode)
         modifiers = try c.decode(UInt32.self, forKey: .modifiers)
         terminal = try c.decodeIfPresent(Bool.self, forKey: .terminal) ?? false
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     }
 }
 
