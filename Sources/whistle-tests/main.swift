@@ -1,3 +1,4 @@
+import AppKit
 import Carbon
 import Darwin
 import Foundation
@@ -114,6 +115,31 @@ do {
 }
 
 check((try? Config.load(at: write(#"[{"id":2,"command":"ls","keyCode":0,"modifiers":256}]"#)))?.first?.terminal == false, "legacy binding without terminal")
+
+check((try? Config.load(at: write(#"[{"id":7,"command":"ls","keyCode":0,"modifiers":256}]"#)))?.first?.enabled == true, "legacy binding without enabled defaults to enabled")
+
+do {
+    let disabled = [Binding(id: 8, command: "ls", keyCode: 0, modifiers: 256, enabled: false)]
+    let url = tempURL()
+    try Config.save(disabled, at: url)
+    check((try? Config.load(at: url)) == disabled, "enabled false survives round-trip")
+}
+
+do {
+    let enabled = [Binding(id: 9, command: "ls", keyCode: 0, modifiers: 256, enabled: true)]
+    let url = tempURL()
+    try Config.save(enabled, at: url)
+    check((try? Config.load(at: url)) == enabled, "explicit enabled true survives round-trip")
+}
+
+check(CarbonMask.from(.command) == UInt32(cmdKey), "carbon mask command")
+check(CarbonMask.from(.option) == UInt32(optionKey), "carbon mask option")
+check(CarbonMask.from(.shift) == UInt32(shiftKey), "carbon mask shift")
+check(CarbonMask.from(.control) == UInt32(controlKey), "carbon mask control")
+check(CarbonMask.from([.command, .shift]) == UInt32(cmdKey | shiftKey), "carbon mask command+shift")
+check(CarbonMask.from([]) == 0, "carbon mask empty")
+check(CarbonMask.from([.capsLock, .function]) == 0, "carbon mask ignores caps lock and function")
+check(CarbonMask.from([.command, .capsLock]) == UInt32(cmdKey), "carbon mask ignores irrelevant flags")
 
 expectThrow(ConfigError.badID(-1), "negative id rejected") {
     try Config.load(at: write(#"[{"id":-1,"command":"ls","keyCode":0,"modifiers":4096,"terminal":false}]"#))

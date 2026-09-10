@@ -13,6 +13,8 @@ public enum WhistleEntry {
       whistle-hotkey bind         bind a command to a key combination
       whistle-hotkey list         list bindings
       whistle-hotkey rm <id>      remove a binding
+      whistle-hotkey enable <id>  enable a binding
+      whistle-hotkey disable <id> disable a binding
       whistle-hotkey terminal     show or set the terminal app
       whistle-hotkey install      start at login (LaunchAgent)
       whistle-hotkey uninstall    stop starting at login
@@ -27,6 +29,10 @@ public enum WhistleEntry {
             List.run()
         case "rm":
             Remove.run(args.dropFirst().first)
+        case "enable":
+            ToggleEnabled.run(args.dropFirst().first, enabled: true)
+        case "disable":
+            ToggleEnabled.run(args.dropFirst().first, enabled: false)
         case "terminal":
             TerminalCommand.run(args.dropFirst().first, args.dropFirst().dropFirst().first)
         case "install":
@@ -158,7 +164,7 @@ enum List {
         }
         for binding in config {
             let key = "\(Display.modifiers(binding.modifiers))\(Display.keyName(binding.keyCode))"
-            print("\(binding.id)\t\(key)\t\(binding.command)\(binding.terminal ? "\t[terminal]" : "")")
+            print("\(binding.id)\t\(key)\t\(binding.command)\(binding.terminal ? "\t[terminal]" : "")\(binding.enabled ? "" : "\t[disabled]")")
         }
     }
 }
@@ -180,6 +186,32 @@ enum Remove {
                 }
                 try Config.save(config)
                 print("removed binding \(id)")
+            }
+        } catch {
+            fputs("whistle: failed to update config: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
+    }
+}
+
+enum ToggleEnabled {
+    static func run(_ idArg: String?, enabled: Bool) {
+        guard let idArg, let id = Int(idArg) else {
+            print("usage: whistle-hotkey \(enabled ? "enable" : "disable") <id>")
+            exit(1)
+        }
+        do {
+            try Config.locked {
+                var config = try Config.load()
+                guard let idx = config.firstIndex(where: { $0.id == id }) else {
+                    print("no binding with id \(id)")
+                    return
+                }
+                config[idx].enabled = enabled
+                try Config.save(config)
+                let binding = config[idx]
+                let key = "\(Display.modifiers(binding.modifiers))\(Display.keyName(binding.keyCode))"
+                print("\(enabled ? "enabled" : "disabled") \(binding.id): \(key) → \(binding.command)")
             }
         } catch {
             fputs("whistle: failed to update config: \(error.localizedDescription)\n", stderr)
