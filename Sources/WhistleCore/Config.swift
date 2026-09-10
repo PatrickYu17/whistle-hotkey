@@ -4,9 +4,9 @@ import Foundation
 
 struct Binding: Codable, Equatable {
     let id: Int
-    let command: String
-    let keyCode: UInt32
-    let modifiers: UInt32
+    var command: String
+    var keyCode: UInt32
+    var modifiers: UInt32
     var terminal: Bool
     var enabled: Bool
 
