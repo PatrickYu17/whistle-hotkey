@@ -117,6 +117,12 @@ final class Daemon: NSObject, NSApplicationDelegate {
                 title += "  (disabled)"
             }
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            if !binding.enabled {
+                item.attributedTitle = NSAttributedString(
+                    string: title,
+                    attributes: [.foregroundColor: NSColor.secondaryLabelColor]
+                )
+            }
             let submenu = NSMenu()
             if binding.enabled {
                 let runItem = NSMenuItem(title: "Run", action: #selector(runFromMenu(_:)), keyEquivalent: "")

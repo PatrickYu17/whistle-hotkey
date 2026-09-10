@@ -54,6 +54,11 @@ enum HotkeyCapture {
                 return nil
             }
 
+            // Modifier keys themselves (⌘ 55, ⇧ 56, ⌥ 58, ⌃ 59) are not hotkey keys
+            if [55, 56, 58, 59].contains(event.keyCode) {
+                return nil
+            }
+
             // Bare Return, Tab, and arrows are not valid global hotkeys
             if modifiers == 0 && [36, 48, 123, 124, 125, 126].contains(event.keyCode) {
                 return nil
@@ -68,6 +73,31 @@ enum HotkeyCapture {
             if existing.contains(where: { $0.keyCode == UInt32(event.keyCode) && $0.modifiers == modifiers }) {
                 label.stringValue = "Already bound to another hotkey"
                 return nil
+            }
+
+            // Probe whether another app already owns the combo (mirrors the CLI's bind flow)
+            let probe = HotKeyManager()
+            let probeBinding = Binding(
+                id: Int(UInt32.max) - 1,
+                command: "",
+                keyCode: UInt32(event.keyCode),
+                modifiers: modifiers
+            )
+            let status = probe.register(probeBinding)
+            probe.unregisterAll()
+            if status == eventHotKeyExistsErr {
+                let alert = NSAlert()
+                alert.messageText = "Combo may be taken"
+                alert.informativeText = "That combination is registered by another app; the binding may not fire. Use it anyway?"
+                alert.addButton(withTitle: "Use it anyway")
+                alert.addButton(withTitle: "Cancel")
+                alert.buttons.last?.keyEquivalent = "\u{1b}"
+                NSApp.activate(ignoringOtherApps: true)
+                let response = alert.runModal()
+                guard response == .alertFirstButtonReturn else {
+                    label.stringValue = "Press the key combination…  (Esc to cancel)"
+                    return nil
+                }
             }
 
             result = (UInt32(event.keyCode), modifiers)
