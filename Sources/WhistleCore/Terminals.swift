@@ -79,6 +79,11 @@ enum Terminals {
         }
     }
 
+    static func commandFileScript(_ command: String) -> String {
+        // The shell already has the script open; unlinking it here also covers exec and exit commands.
+        "#!/bin/zsh\n/bin/rm -f -- \"$0\"\n\(command)\n"
+    }
+
     private static func launchCommandFile(_ command: String) throws {
         try FileManager.default.createDirectory(
             at: Config.dir,
@@ -86,20 +91,22 @@ enum Terminals {
             attributes: [.posixPermissions: 0o700]
         )
         let script = Config.dir.appendingPathComponent("run-\(UUID().uuidString).command")
-        try "#!/bin/zsh\n\(command)\n".write(to: script, atomically: true, encoding: .utf8)
+        try commandFileScript(command).write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
         let opener = Process()
         opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         opener.arguments = [script.path]
         opener.terminationHandler = { p in
             if p.terminationStatus != 0 {
+                try? FileManager.default.removeItem(at: script)
                 Notifier.failure("Couldn't open command file (status \(p.terminationStatus))")
             }
         }
-        try opener.run()
-        // the file can linger up to 30s; delete right after `open` reads it if that ever matters
-        DispatchQueue.global().asyncAfter(deadline: .now() + 30) {
+        do {
+            try opener.run()
+        } catch {
             try? FileManager.default.removeItem(at: script)
+            throw error
         }
     }
 }

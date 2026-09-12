@@ -9,6 +9,7 @@ final class Daemon: NSObject, NSApplicationDelegate {
     private var lastMtime: Date?
     private var timer: Timer?
     private var lockFD: Int32 = -1
+    private var isCapturingHotkey = false
 
     static func run() {
         let daemon = Daemon()
@@ -34,7 +35,8 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
         hotKeys.installHandler()
         hotKeys.onTrigger = { [weak self] id in
-            guard let self, let binding = self.config.first(where: { $0.id == id }) else { return }
+            guard let self, !self.isCapturingHotkey,
+                  let binding = self.config.first(where: { $0.id == id && $0.enabled }) else { return }
             Runner.run(binding)
         }
 
@@ -72,16 +74,22 @@ final class Daemon: NSObject, NSApplicationDelegate {
             config = try Config.load()
         } catch {
             Notifier.failure("Config error: \(error.localizedDescription); keeping previous bindings")
+            refreshHotkeys()
             rebuildMenu()
             return
         }
         lastMtime = mtime
+        refreshHotkeys()
+        rebuildMenu()
+    }
+
+    private func refreshHotkeys() {
         conflicts = []
         hotKeys.unregisterAll()
+        guard !isCapturingHotkey else { return }
         for binding in config where binding.enabled && hotKeys.register(binding) != noErr {
             conflicts.insert(binding.id)
         }
-        rebuildMenu()
     }
 
     private func updateConfig(_ body: (inout [Binding]) throws -> Void) {
@@ -165,8 +173,8 @@ final class Daemon: NSObject, NSApplicationDelegate {
     }
 
     @objc private func runFromMenu(_ item: NSMenuItem) {
-        guard let id = item.representedObject as? Int,
-              let binding = config.first(where: { $0.id == id }) else { return }
+        guard !isCapturingHotkey, let id = item.representedObject as? Int,
+              let binding = config.first(where: { $0.id == id && $0.enabled }) else { return }
         Runner.run(binding)
     }
 
@@ -180,10 +188,18 @@ final class Daemon: NSObject, NSApplicationDelegate {
 
     @objc private func changeHotkey(_ item: NSMenuItem) {
         guard let id = item.representedObject as? Int,
-              let binding = config.first(where: { $0.id == id }) else { return }
+              config.contains(where: { $0.id == id }) else { return }
         let existing = config.filter { $0.id != id }
-        if let recorded = HotkeyCapture.record(for: binding, existing: existing) {
-            mutate(id) { $0.keyCode = recorded.keyCode; $0.modifiers = recorded.modifiers }
+        isCapturingHotkey = true
+        hotKeys.unregisterAll()
+        defer {
+            isCapturingHotkey = false
+            reload()
+        }
+        if let recorded = HotkeyCapture.record(existing: existing) {
+            updateConfig { config in
+                try Config.changeHotkey(id, keyCode: recorded.keyCode, modifiers: recorded.modifiers, in: &config)
+            }
         }
     }
 

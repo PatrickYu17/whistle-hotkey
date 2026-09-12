@@ -164,6 +164,54 @@ expectThrow(ConfigError.bareKey(1), "bare arrow rejected") {
     try Config.load(at: write(#"[{"id":1,"command":"ls","keyCode":123,"modifiers":0,"terminal":false}]"#))
 }
 
+do {
+    let original = Binding(id: 1, command: "echo preserved", keyCode: 0, modifiers: UInt32(cmdKey), terminal: true)
+    let concurrent = Binding(id: 2, command: "echo other", keyCode: 1, modifiers: UInt32(cmdKey))
+    let url = tempURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    try Config.save([original, concurrent], at: url)
+    var latest = try Config.load(at: url)
+    expectThrow(ConfigError.duplicateCombo(2), "hotkey update rejects a binding added since capture began") {
+        try Config.changeHotkey(1, keyCode: 1, modifiers: UInt32(cmdKey), in: &latest)
+    }
+    check(latest == [original, concurrent], "conflicting update leaves bindings intact")
+    expectThrow(ConfigError.missingBinding(3), "hotkey update rejects a removed binding") {
+        try Config.changeHotkey(3, keyCode: 2, modifiers: UInt32(cmdKey), in: &latest)
+    }
+    try Config.changeHotkey(1, keyCode: 0, modifiers: UInt32(cmdKey), in: &latest)
+    check(latest == [original, concurrent], "current hotkey can be recorded again")
+    expectThrow(ConfigError.bareKey(1), "invalid hotkey update is rejected before mutation") {
+        try Config.changeHotkey(1, keyCode: 2, modifiers: 0, in: &latest)
+    }
+    check(latest == [original, concurrent], "invalid update leaves bindings intact")
+    try Config.changeHotkey(1, keyCode: 122, modifiers: 0, in: &latest)
+    try Config.save(latest, at: url)
+    let saved = try Config.load(at: url)
+    check(saved[0] == Binding(id: 1, command: original.command, keyCode: 122, modifiers: 0, terminal: true), "hotkey update preserves other fields")
+    check(saved[1] == concurrent, "hotkey update preserves concurrent additions")
+}
+
+do {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("whistle script ' \(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let script = dir.appendingPathComponent("launch.command")
+    let output = dir.appendingPathComponent("result")
+    // Include a command longer than a typical shell read buffer to verify unlinking preserves subsequent reads.
+    let command = "#" + String(repeating: "x", count: 32768) + "\nprintf '%s' 'command ran' > result\nexec /usr/bin/true"
+    try Terminals.commandFileScript(command).write(to: script, atomically: true, encoding: .utf8)
+    check(FileManager.default.fileExists(atPath: script.path), "command file remains available before execution")
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+    process.arguments = [script.path]
+    process.currentDirectoryURL = dir
+    try process.run()
+    process.waitUntilExit()
+    check(process.terminationStatus == 0, "self-cleaning command file executes successfully")
+    check((try? String(contentsOf: output, encoding: .utf8)) == "command ran", "script continues reading after self-removal")
+    check(!FileManager.default.fileExists(atPath: script.path), "command file cleans up even with exec and quoted path")
+}
+
 let legacySettings = try? JSONDecoder().decode(Settings.self, from: Data(#"{"terminal":"auto"}"#.utf8))
 check(legacySettings?.terminal == "auto", "settings legacy terminal")
 check(legacySettings?.command == nil, "settings legacy command")

@@ -35,6 +35,8 @@ enum ConfigError: Error, Equatable {
     case duplicateID(Int)
     case badCombo(Int)
     case bareKey(Int)
+    case duplicateCombo(Int)
+    case missingBinding(Int)
     case lockFailed
 }
 
@@ -45,6 +47,8 @@ extension ConfigError: LocalizedError {
         case .duplicateID(let id): return "duplicate binding id \(id)"
         case .badCombo(let id): return "binding \(id) has an unknown key code or modifiers"
         case .bareKey(let id): return "binding \(id) uses a bare printable key; add a modifier (only F-keys can be modifier-less)"
+        case .duplicateCombo(let id): return "that combination is already assigned to binding \(id)"
+        case .missingBinding(let id): return "binding \(id) no longer exists"
         case .lockFailed: return "could not acquire config lock"
         }
     }
@@ -72,7 +76,21 @@ enum Config {
     }
 
     // F-keys are the only keyCodes allowed as global hotkeys without a modifier
-    private static let bareKeys: Set<UInt32> = [96, 97, 98, 99, 100, 101, 103, 105, 107, 109, 111, 113, 118, 120, 122]
+    static let bareKeys: Set<UInt32> = [96, 97, 98, 99, 100, 101, 103, 105, 107, 109, 111, 113, 118, 120, 122]
+
+    static func changeHotkey(_ id: Int, keyCode: UInt32, modifiers: UInt32, in bindings: inout [Binding]) throws {
+        guard let index = bindings.firstIndex(where: { $0.id == id }) else {
+            throw ConfigError.missingBinding(id)
+        }
+        if let duplicate = bindings.first(where: { $0.id != id && $0.keyCode == keyCode && $0.modifiers == modifiers }) {
+            throw ConfigError.duplicateCombo(duplicate.id)
+        }
+        var updated = bindings[index]
+        updated.keyCode = keyCode
+        updated.modifiers = modifiers
+        try validate([updated])
+        bindings[index] = updated
+    }
 
     static func validate(_ bindings: [Binding]) throws {
         let validModifiers = UInt32(cmdKey | shiftKey | optionKey | controlKey)
